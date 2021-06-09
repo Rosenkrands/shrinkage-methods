@@ -13,6 +13,32 @@ linear.pred <- list(
   test = predict(linear.model, test)
 )
 
+tune.lambda <- function(alpha, lambda_seq){
+  mae_seq <- c()
+  for (lambda in lambda_seq){
+    model <- glmnet(as.matrix(select(train,-mpg)), as.matrix(select(train,mpg)), alpha = alpha, lambda = lambda)
+    pred <- predict(model, as.matrix(select(train, -mpg)))
+    mae <- tibble(real = train$mpg, pred = pred) %>%
+      summarise(mae = mean(abs(real - pred)))
+    mae_seq <- c(mae_seq, mae$mae[1])
+  }
+  return(tibble(lambda = lambda_seq, mae = mae_seq, alpha = alpha))
+}
+
+ridge.tune <- tune.lambda(alpha = 0, lambda_seq = seq(0, .25, .01))
+lasso.tune <- tune.lambda(alpha = 1, lambda_seq = seq(0, .25, .01))  
+
+tune.result <- bind_rows(ridge.tune, lasso.tune) 
+tune.result %>%
+  mutate(alpha = factor(alpha)) %>%
+  ggplot(aes(x = lambda, y = mae)) +
+    geom_line(aes(color = alpha)) +
+    theme_bw()
+
+lambda.vals <- tune.result %>%
+  group_by(alpha) %>%
+  filter(mae == min(mae))
+
 ridge.model <- glmnet(as.matrix(select(train,-mpg)), as.matrix(select(train,mpg)), alpha = 0, lambda = .1)
 ridge.pred <- list(
   train = predict(ridge.model, as.matrix(select(train, -mpg))),
@@ -34,13 +60,6 @@ pred.data <- tibble(real = test$mpg, pred = linear.pred$test, model = 'linear', 
   mutate(model = factor(model, levels = c('linear', 'ridge', 'lasso'))) %>%
   mutate(data.set = factor(data.set, levels = c('train', 'test')))
 
-pred.data %>%  
-  ggplot(aes(x = real, y = pred)) +
-    geom_abline(size = 1) +
-    geom_point(aes(color = model, alpha = data.set)) +
-    theme_bw() +
-    labs(x = 'Observed values', y = 'Predicted values')
-
 pred.performance <- pred.data %>%
   group_by(model, data.set) %>%
   summarise(mae = mean(abs(real - pred)))
@@ -50,3 +69,11 @@ pred.performance %>%
     geom_point(aes(color = data.set)) +
     theme_bw() +
     labs(x = 'Model', y='Mean Absolute Error')
+
+pred.data %>%  
+  ggplot(aes(x = real, y = pred)) +
+    geom_abline(size = 1) +
+    geom_point(aes(color = model, alpha = data.set)) +
+    theme_bw() +
+    labs(x = 'Observed values', y = 'Predicted values')
+
